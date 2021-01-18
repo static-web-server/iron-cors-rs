@@ -15,5 +15,5 @@ iron = { git = "https://github.com/static-web-server/iron.git", branch = "master
 log = "0.4"
 
 [dev-dependencies]
-iron-test = "0.6"
+iron-test = { git = "https://github.com/static-web-server/iron-test.git", branch = "master" }
 unicase = "1.4"
