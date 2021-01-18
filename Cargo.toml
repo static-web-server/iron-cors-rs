@@ -8,11 +8,12 @@ documentation = "https://docs.rs/iron-cors/"
 license = "MIT/Apache-2.0"
 readme = "README.md"
 description = "A CORS middleware implementation for Iron."
+edition = "2018"
 
 [dependencies]
+iron = { git = "https://github.com/static-web-server/iron.git", branch = "master" }
 log = "0.4"
-iron = "0.6"
 
 [dev-dependencies]
-iron-test = "0.6.0"
-unicase = "1.4.0"
+iron-test = "0.6"
+unicase = "1.4"

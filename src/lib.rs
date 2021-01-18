@@ -47,14 +47,16 @@
 //! for a full usage example.
 
 extern crate iron;
-#[macro_use] extern crate log;
+
+#[macro_use]
+extern crate log;
 
 use std::collections::HashSet;
 
-use iron::{Request, Response, IronResult, AroundMiddleware, Handler};
+use iron::headers;
 use iron::method::Method;
 use iron::status;
-use iron::headers;
+use iron::{AroundMiddleware, Handler, IronResult, Request, Response};
 
 /// The struct that holds the CORS configuration.
 pub struct CorsMiddleware {
@@ -80,28 +82,26 @@ impl CorsMiddleware {
 }
 
 impl AroundMiddleware for CorsMiddleware {
-    fn around(self, handler: Box<Handler>) -> Box<Handler> {
+    fn around(self, handler: Box<dyn Handler>) -> Box<dyn Handler> {
         match self.allowed_hosts {
             Some(allowed_hosts) => Box::new(CorsHandlerWhitelist {
-                handler: handler,
-                allowed_hosts: allowed_hosts,
+                handler,
+                allowed_hosts,
             }),
-            None => Box::new(CorsHandlerAllowAny {
-                handler: handler,
-            }),
+            None => Box::new(CorsHandlerAllowAny { handler }),
         }
     }
 }
 
 /// Handler for whitelist based rules.
 struct CorsHandlerWhitelist {
-    handler: Box<Handler>,
+    handler: Box<dyn Handler>,
     allowed_hosts: HashSet<String>,
 }
 
 /// Handler if allowing any origin.
 struct CorsHandlerAllowAny {
-    handler: Box<Handler>,
+    handler: Box<dyn Handler>,
 }
 
 impl CorsHandlerWhitelist {
@@ -110,16 +110,17 @@ impl CorsHandlerWhitelist {
         headers.set(headers::AccessControlAllowOrigin::Value(header));
     }
 
-    fn add_cors_preflight_headers(&self,
-                                  headers: &mut headers::Headers,
-                                  origin: &headers::Origin,
-                                  acrm: &headers::AccessControlRequestMethod,
-                                  acrh: Option<&headers::AccessControlRequestHeaders>) {
-
+    fn add_cors_preflight_headers(
+        &self,
+        headers: &mut headers::Headers,
+        origin: &headers::Origin,
+        acrm: &headers::AccessControlRequestMethod,
+        acrh: Option<&headers::AccessControlRequestHeaders>,
+    ) {
         self.add_cors_header(headers, origin);
 
         // Copy the method requested by the browser in the allowed methods header
-        headers.set(headers::AccessControlAllowMethods(vec!(acrm.0.clone())));
+        headers.set(headers::AccessControlAllowMethods(vec![acrm.0.clone()]));
 
         // If we have special allowed headers, copy them in the allowed headers in the response
         if let Some(acrh) = acrh {
@@ -127,13 +128,23 @@ impl CorsHandlerWhitelist {
         }
     }
 
-    fn process_possible_preflight(&self, req: &mut Request, origin: headers::Origin) -> IronResult<Response> {
+    fn process_possible_preflight(
+        &self,
+        req: &mut Request,
+        origin: headers::Origin,
+    ) -> IronResult<Response> {
         // Verify origin header
         let may_process = self.allowed_hosts.contains(&format_cors_origin(&origin));
 
         if !may_process {
-            warn!("Got disallowed preflight CORS request from {}", &origin.host.hostname);
-            return Ok(Response::with((status::BadRequest, "Invalid CORS request: Origin not allowed")));
+            warn!(
+                "Got disallowed preflight CORS request from {}",
+                &origin.host.hostname
+            );
+            return Ok(Response::with((
+                status::BadRequest,
+                "Invalid CORS request: Origin not allowed",
+            )));
         }
 
         {
@@ -153,22 +164,36 @@ impl CorsHandlerWhitelist {
         }
 
         // If we don't have an Access-Control-Request-Method header, treat as a possible OPTION CORS call
-        return self.process_possible_cors_request(req, origin)
+        return self.process_possible_cors_request(req, origin);
     }
 
-    fn process_possible_cors_request(&self, req: &mut Request, origin: headers::Origin) -> IronResult<Response> {
+    fn process_possible_cors_request(
+        &self,
+        req: &mut Request,
+        origin: headers::Origin,
+    ) -> IronResult<Response> {
         // Verify origin header
         let may_process = self.allowed_hosts.contains(&format_cors_origin(&origin));
         // Process request
         if may_process {
             // Everything OK, process request and add CORS header to response
-            self.handler.handle(req)
-                .map(|mut res| { self.add_cors_header(&mut res.headers, &origin); res })
-                .map_err(|mut err| { self.add_cors_header(&mut err.response.headers, &origin); err })
+            self.handler
+                .handle(req)
+                .map(|mut res| {
+                    self.add_cors_header(&mut res.headers, &origin);
+                    res
+                })
+                .map_err(|mut err| {
+                    self.add_cors_header(&mut err.response.headers, &origin);
+                    err
+                })
         } else {
             // Not adding headers
             warn!("Got disallowed CORS request from {}", &origin.host.hostname);
-            Ok(Response::with((status::BadRequest, "Invalid CORS request: Origin not allowed")))
+            Ok(Response::with((
+                status::BadRequest,
+                "Invalid CORS request: Origin not allowed",
+            )))
         }
     }
 }
@@ -203,15 +228,16 @@ impl CorsHandlerAllowAny {
         headers.set(headers::AccessControlAllowOrigin::Any);
     }
 
-    fn add_cors_preflight_headers(&self,
-                                  headers: &mut headers::Headers,
-                                  acrm: &headers::AccessControlRequestMethod,
-                                  acrh: Option<&headers::AccessControlRequestHeaders>) {
-
+    fn add_cors_preflight_headers(
+        &self,
+        headers: &mut headers::Headers,
+        acrm: &headers::AccessControlRequestMethod,
+        acrh: Option<&headers::AccessControlRequestHeaders>,
+    ) {
         self.add_cors_header(headers);
 
         // Copy the method requested by the browser into the allowed methods header
-        headers.set(headers::AccessControlAllowMethods(vec!(acrm.0.clone())));
+        headers.set(headers::AccessControlAllowMethods(vec![acrm.0.clone()]));
 
         // If we have special allowed headers, copy them into the allowed headers in the response
         if let Some(acrh) = acrh {
@@ -237,13 +263,20 @@ impl CorsHandlerAllowAny {
         }
 
         // If we don't have an Access-Control-Request-Method header, treat as a possible OPTION CORS call
-        return self.process_possible_cors_request(req)
+        return self.process_possible_cors_request(req);
     }
 
     fn process_possible_cors_request(&self, req: &mut Request) -> IronResult<Response> {
-        self.handler.handle(req)
-            .map(|mut res| { self.add_cors_header(&mut res.headers); res })
-            .map_err(|mut err| { self.add_cors_header(&mut err.response.headers); err })
+        self.handler
+            .handle(req)
+            .map(|mut res| {
+                self.add_cors_header(&mut res.headers);
+                res
+            })
+            .map_err(|mut err| {
+                self.add_cors_header(&mut err.response.headers);
+                err
+            })
     }
 }
 
@@ -255,9 +288,7 @@ impl CorsHandlerAllowAny {
 impl Handler for CorsHandlerAllowAny {
     fn handle(&self, req: &mut Request) -> IronResult<Response> {
         match req.headers.get::<headers::Origin>() {
-            None => {
-                self.handler.handle(req)
-            },
+            None => self.handler.handle(req),
             Some(_) => {
                 match req.method {
                     //If is an OPTION request, check for preflight
@@ -265,7 +296,7 @@ impl Handler for CorsHandlerAllowAny {
                     // If is not an OPTION request, we assume a normal CORS (no preflight)
                     _ => self.process_possible_cors_request(req),
                 }
-            },
+            }
         }
     }
 }

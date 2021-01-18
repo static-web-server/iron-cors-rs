@@ -1,7 +1,7 @@
 extern crate iron;
 extern crate iron_cors;
 
-use iron::{Iron, Handler, Request, Response, IronResult, Chain, status};
+use iron::{status, Chain, Handler, Iron, IronResult, Request, Response};
 use iron_cors::CorsMiddleware;
 
 struct HelloWorldHandler;
